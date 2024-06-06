@@ -11,13 +11,26 @@ from inventory.db import get_mongodb
 api = Namespace("record", description="Record APIs")
 
 search_model = api.model(
-    'Record Search', {'query': fields.String(required=True, default="", description='Query string')}
+    'Record Search', {'fname': fields.String(required=True, default="Yoftahe", description='First name')}
 )
 
 insert_model = api.model(
     'Record Insert', {
+        'row': fields.String(required=True, description='Record row number'),
         'fname': fields.String(required=True, default="James", description='First name'),
         'lname': fields.String(required=True, default="Bond", description='Last name')                  
+    }
+)
+
+delete_model = api.model('Record Delete',{
+    'row': fields.String(required=True, description="Row of item to delete")
+    }
+)
+
+update_model = api.model('Record Update', {
+    'row': fields.String(required=True, description='Row of record to update'),
+    'key': fields.String(required=True, description='Field to update'),
+    'new_value': fields.String(required=True, description='New value')
     }
 )
 
@@ -46,7 +59,6 @@ class RecordList(Resource):
     @api.expect(search_model)
     def post(self):
         req_obj = request.json
-        res_obj = req_obj
         mongo_dbh, error_obj = get_mongodb()
         if error_obj != {}:
             return error_obj
@@ -64,28 +76,48 @@ class RecordList(Resource):
         return self.post()
 
 
+@api.route('/delete')
+class RecordList(Resource):
+    @api.doc('delete_records')
+    @api.expect(delete_model)
+    def delete(self):
+        req_obj = request.json
+        mongo_dbh, error_obj = get_mongodb()
+        if error_obj != {}:
+            return error_obj
+        delete_obj = {'row': req_obj.get('row')}
+        res = mongo_dbh['c_inventory'].delete_one(delete_obj)
+        if res.deleted_count == 1:
+            return {'status': 1, 'message': 'Record successfully deleted'}
+        else: 
+            return {'status': 0, 'message': 'Record not found!'}
 
-def get_mongodb():
+    @api.doc(False)
+    def get(self):
+        return self.delete()
 
 
-    ret_obj, error_obj = {}, {}
-    try:
-        conn_str, db_name, ser = "", "", ""
-        ser = current_app.config["SERVER"] if "SERVER" in current_app.config else ser
-        ser = os.environ["SERVER"] if "SERVER" in os.environ else ser
-        if ser == "dev":
-            conn_str =  current_app.config["MONGODB_CONNSTRING"]
-            db_name = current_app.config["DB_NAME"]
+@api.route('/update')
+class RecordList(Resource):
+    @api.doc('update_records')
+    @api.expect(update_model)
+    def put(self):
+        req_obj = request.json
+        mongo_dbh, error_obj = get_mongodb()
+        if error_obj:
+            return error_obj
+        update_row = req_obj.get('row')
+        update_key = req_obj.get('key')
+        new_value = req_obj.get('new_value')
+        update_res = mongo_dbh['c_inventory'].update_one({"row": update_row}, {"$set": {update_key: new_value}})
+        if update_res.modified_count == 1:
+            return {'status': 1, 'message': 'Update successful'}
         else:
-            conn_str, db_name = os.environ['MONGODB_CONNSTRING'], os.environ['DB_NAME']
-        client = pymongo.MongoClient(conn_str)
-        client.server_info()
-        ret_obj = client[db_name]
-    except pymongo.errors.ServerSelectionTimeoutError as err:
-        error_obj = {"status":0, "error":"Connection to MongoDB failed", "details":err.details}
-    except pymongo.errors.OperationFailure as err:
-        error_obj = {"status":0, "error":"Connection to MongoDB failed", "details":err.details}
-    return ret_obj, error_obj
+            return {'status': 0, 'message': 'Record not updated'}
+        
+    @api.doc(False)
+    def get(self):
+        return self.put()
 
 
 
